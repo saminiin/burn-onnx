@@ -234,6 +234,12 @@ impl_node_codegen_dispatch! {
     IsInf,
     IsNaN,
 
+    // ML ops
+    Imputer,
+    Scaler,
+    SVMRegressor,
+    TreeEnsembleClassifier,
+
     // Special ops
     Attention,
 

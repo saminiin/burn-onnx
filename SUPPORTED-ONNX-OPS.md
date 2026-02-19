@@ -93,6 +93,7 @@ functionality.
 | [If][77]                         | ✅             | ✅           |
 | [Im][78]                         | ❌             | ❌           |
 | [ImageDecoder][197]              | ❌             | ❌           |
+| [Imputer][205]                   | ✅             | ✅           |
 | [InstanceNormalization][79]      | ✅             | ✅           |
 | [IsInf][80]                      | ✅             | ✅           |
 | [IsNaN][81]                      | ✅             | ✅           |
@@ -165,11 +166,12 @@ functionality.
 | [RoiAlign][146]                  | ❌             | ❌           |
 | [RotaryEmbedding][200]           | ❌             | ❌           |
 | [Round][147]                     | ✅             | ✅           |
-| [Scan][148]                      | ✅             | ✅           |
+| [Scan][148]                      | ✅             | ✅           || [Scaler][206]                    | ✅             | ✅           || [Scaler][206]                    | ✅             | ✅           |
 | [Scatter][149]                   | ❌             | ✅           |
 | [ScatterElements][150]           | ✅             | ✅           |
 | [ScatterND][151]                 | ✅             | ✅           |
 | [Selu][152]                      | ✅             | ✅           |
+| [SVMRegressor][207]              | ✅             | ✅           |
 | [SequenceAt][153]                | ❌             | ❌           |
 | [SequenceConstruct][154]         | ❌             | ❌           |
 | [SequenceEmpty][155]             | ❌             | ❌           |
@@ -209,6 +211,7 @@ functionality.
 | [Tile][185]                      | ✅             | ✅           |
 | [TopK][186]                      | ✅             | ✅           |
 | [Transpose][187]                 | ✅             | ✅           |
+| [TreeEnsembleClassifier][208]    | ✅             | ✅           |
 | [Trilu][188]                     | ✅             | ✅           |
 | [Unique][189]                    | ❌             | ❌           |
 | [Upsample][190]                  | ❌             | ❌           |
@@ -415,6 +418,10 @@ functionality.
 [202]: https://onnx.ai/onnx/operators/onnx__StringSplit.html "ONNX StringSplit"
 [203]: https://onnx.ai/onnx/operators/onnx__Swish.html "ONNX Swish"
 [204]: https://onnx.ai/onnx/operators/onnx__TensorScatter.html "ONNX TensorScatter"
+[205]: https://onnx.ai/onnx/operators/onnx_ml__Imputer.html "ONNX ML Imputer"
+[206]: https://onnx.ai/onnx/operators/onnx_ml__Scaler.html "ONNX ML Scaler"
+[207]: https://onnx.ai/onnx/operators/onnx_ml__SVMRegressor.html "ONNX ML SVMRegressor"
+[208]: https://onnx.ai/onnx/operators/onnx_ml__TreeEnsembleClassifier.html "ONNX ML TreeEnsembleClassifier"
 
 ## Pattern Coalescing
 

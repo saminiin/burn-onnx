@@ -498,6 +498,27 @@ impl ProcessorRegistry {
             Box::new(crate::node::is_nan::IsNaNProcessor),
         );
 
+        registry.register(
+            NodeType::Imputer,
+            Box::new(crate::node::imputer::ImputerProcessor),
+        );
+        registry.register(
+            NodeType::Scaler,
+            Box::new(crate::node::scaler::ScalerProcessor),
+        );
+        registry.register(
+            NodeType::SVMRegressor,
+            Box::new(crate::node::svmregressor::SVMRegressorProcessor),
+        );
+        registry.register(
+            NodeType::TreeEnsembleClassifier,
+            Box::new(crate::node::tree_ensemble_classifier::TreeEnsembleClassifierProcessor),
+        );
+        registry.register(
+            NodeType::ZipMap,
+            Box::new(crate::node::zipmap::ZipMapProcessor),
+        );
+
         // Special operations
         registry.register(NodeType::Cast, Box::new(crate::node::cast::CastProcessor));
         registry.register(
