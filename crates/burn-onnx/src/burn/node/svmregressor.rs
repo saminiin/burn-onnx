@@ -53,7 +53,7 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             let coef_tensor = Tensor::<B, 1>::from_data(coef_data, &*self.device);
                             
                             // prediction = kernel_values @ coefficients - rho
-                            let result = kernel_values.matmul(coef_tensor.unsqueeze()) - rho;
+                            let result = kernel_values.matmul(coef_tensor.unsqueeze_dim::<2>(1)) - rho;
                             result
                         }
                     }
@@ -87,16 +87,16 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             let mut kernel_values = Tensor::<B, 2>::zeros([batch_size, n_supports], &*self.device);
                             for i in 0..n_supports {
                                 let sv_i = sv_tensor.clone().narrow(0, i, 1).squeeze_dims::<1>(&[0]);
-                                let diff = #input.clone() - sv_i.unsqueeze();
+                                let diff = #input.clone() - sv_i.unsqueeze_dim::<2>(0);
                                 let sq_dist = diff.clone().powf_scalar(2.0).sum_dim(1);
                                 let kernel_val = (-gamma * sq_dist).exp();
-                                kernel_values = kernel_values.slice_assign([0..batch_size as i64, i as i64..(i + 1) as i64], kernel_val.unsqueeze_dim(1));
+                                kernel_values = kernel_values.slice_assign([0..batch_size as i64, i as i64..(i + 1) as i64], kernel_val);
                             }
                             
                             let coef_data = burn::tensor::TensorData::from(&coefficients[..n_supports]);
                             let coef_tensor = Tensor::<B, 1>::from_data(coef_data, &*self.device);
                             
-                            let result = kernel_values.matmul(coef_tensor.unsqueeze()) - rho;
+                            let result = kernel_values.matmul(coef_tensor.unsqueeze_dim::<2>(1)) - rho;
                             result
                         }
                     }
@@ -135,7 +135,7 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             let coef_data = burn::tensor::TensorData::from(&coefficients[..n_supports]);
                             let coef_tensor = Tensor::<B, 1>::from_data(coef_data, &*self.device);
                             
-                            let result = kernel_values.matmul(coef_tensor.unsqueeze()) - rho;
+                            let result = kernel_values.matmul(coef_tensor.unsqueeze_dim::<2>(1)) - rho;
                             result
                         }
                     }
@@ -172,7 +172,7 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             let coef_data = burn::tensor::TensorData::from(&coefficients[..n_supports]);
                             let coef_tensor = Tensor::<B, 1>::from_data(coef_data, &*self.device);
                             
-                            let result = kernel_values.matmul(coef_tensor.unsqueeze()) - rho;
+                            let result = kernel_values.matmul(coef_tensor.unsqueeze_dim::<2>(1)) - rho;
                             result
                         }
                     }
@@ -247,7 +247,7 @@ mod tests {
                 let kernel_values = input.matmul(sv_tensor.transpose());
                 let coef_data = burn::tensor::TensorData::from(&coefficients[..n_supports]);
                 let coef_tensor = Tensor::<B, 1>::from_data(coef_data, &*self.device);
-                let result = kernel_values.matmul(coef_tensor.unsqueeze()) - rho;
+                let result = kernel_values.matmul(coef_tensor.unsqueeze_dim::<2>(1)) - rho;
                 result
             };
             output
