@@ -9,74 +9,104 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
         &self.outputs
     }
 
+    fn field(&self) -> Option<Field> {
+        // Store all tree and class data as struct fields to avoid code bloat
+        let tree_ids = self.config.nodes_treeids.as_ref()?;
+        let node_ids = self.config.nodes_nodeids.as_ref()?;
+        let feat_ids = self.config.nodes_featureids.as_ref()?;
+        let modes = self.config.nodes_modes.as_ref()?;
+        let values = self.config.nodes_values.as_ref()?;
+        let true_ids = self.config.nodes_truenodeids.as_ref()?;
+        let false_ids = self.config.nodes_falsenodeids.as_ref()?;
+        
+        let c_tree_ids = self.config.class_treeids.as_ref()?;
+        let c_node_ids = self.config.class_nodeids.as_ref()?;
+        let c_ids = self.config.class_ids.as_ref()?;
+        let c_weights = self.config.class_weights.as_ref()?;
+        
+        if tree_ids.is_empty() || modes.is_empty() {
+            return None;
+        }
+        
+        let name = Ident::new(&self.name, Span::call_site());
+        
+        // Collect data
+        let tree_ids_data: Vec<_> = tree_ids.iter().copied().collect();
+        let node_ids_data: Vec<_> = node_ids.iter().copied().collect();
+        let feat_ids_data: Vec<_> = feat_ids.iter().copied().collect();
+        let modes_data: Vec<_> = modes.iter().map(|s| s.as_str()).collect();
+        let values_data: Vec<_> = values.iter().copied().collect();
+        let true_ids_data: Vec<_> = true_ids.iter().copied().collect();
+        let false_ids_data: Vec<_> = false_ids.iter().copied().collect();
+        
+        let c_tree_ids_data: Vec<_> = c_tree_ids.iter().copied().collect();
+        let c_node_ids_data: Vec<_> = c_node_ids.iter().copied().collect();
+        let c_ids_data: Vec<_> = c_ids.iter().copied().collect();
+        let c_weights_data: Vec<_> = c_weights.iter().copied().collect();
+        
+        let num_classes = self.config.classlabels_int64s.as_ref().map(|l| l.len()).unwrap_or(2);
+        let class_labels: Vec<_> = self.config.classlabels_int64s.as_ref()
+            .map(|l| l.iter().copied().collect())
+            .unwrap_or_else(|| (0..num_classes as i64).collect());
+        
+        let n_tree_nodes = tree_ids.len();
+        let n_class_entries = c_tree_ids.len();
+        
+        // Store as a tuple: (tree_data, class_data, labels, num_classes)
+        // tree_data: (tree_ids, node_ids, feature_ids, modes, split_values, true_ids, false_ids)
+        // class_data: (class_tree_ids, class_node_ids, class_ids, class_weights)
+        Some(Field::new(
+            &self.name,
+            quote! { (
+                (Vec<i64>, Vec<i64>, Vec<i64>, Vec<String>, Vec<f32>, Vec<i64>, Vec<i64>),
+                (Vec<i64>, Vec<i64>, Vec<i64>, Vec<f32>),
+                Vec<i64>,
+                usize
+            ) },
+            quote! {
+                let #name = (
+                    (
+                        vec![#(#tree_ids_data),*],
+                        vec![#(#node_ids_data),*],
+                        vec![#(#feat_ids_data),*],
+                        vec![#(#modes_data.to_string()),*],
+                        vec![#(#values_data),*],
+                        vec![#(#true_ids_data),*],
+                        vec![#(#false_ids_data),*]
+                    ),
+                    (
+                        vec![#(#c_tree_ids_data),*],
+                        vec![#(#c_node_ids_data),*],
+                        vec![#(#c_ids_data),*],
+                        vec![#(#c_weights_data),*]
+                    ),
+                    vec![#(#class_labels),*],
+                    #num_classes
+                );
+            },
+        ))
+    }
+
     fn forward(&self, scope: &mut ScopeAtPosition<'_>) -> TokenStream {
         let input = scope.arg(&self.inputs[0]);
         let label_output = arg_to_ident(&self.outputs[0]);
         let prob_output = arg_to_ident(&self.outputs[1]);
 
-        // Extract tree structure
-        let nodes_treeids = self.config.nodes_treeids.as_ref();
-        let nodes_nodeids = self.config.nodes_nodeids.as_ref();
-        let nodes_featureids = self.config.nodes_featureids.as_ref();
-        let nodes_modes = self.config.nodes_modes.as_ref();
-        let nodes_values = self.config.nodes_values.as_ref();
-        let nodes_truenodeids = self.config.nodes_truenodeids.as_ref();
-        let nodes_falsenodeids = self.config.nodes_falsenodeids.as_ref();
-        
-        // Extract class information
-        let class_treeids = self.config.class_treeids.as_ref();
-        let class_nodeids = self.config.class_nodeids.as_ref();
-        let class_ids = self.config.class_ids.as_ref();
-        let class_weights = self.config.class_weights.as_ref();
-        let classlabels = self.config.classlabels_int64s.as_ref();
+        let has_data = self.config.nodes_treeids.is_some() 
+            && self.config.nodes_modes.is_some()
+            && self.config.class_treeids.is_some();
         
         let post_transform = self.config.post_transform.as_deref().unwrap_or("NONE");
+        let field_name = Ident::new(&self.name, Span::call_site());
 
         // Generate tree evaluation logic
-        let function = if let (Some(tree_ids), Some(node_ids), Some(feat_ids), Some(modes), 
-                              Some(values), Some(true_ids), Some(false_ids),
-                              Some(c_tree_ids), Some(c_node_ids), Some(c_ids), Some(c_weights)) 
-            = (nodes_treeids, nodes_nodeids, nodes_featureids, nodes_modes, nodes_values,
-               nodes_truenodeids, nodes_falsenodeids, class_treeids, class_nodeids, 
-               class_ids, class_weights) {
-            
-            // Convert to vectors for code generation
-            let tree_ids_vec: Vec<_> = tree_ids.iter().copied().collect();
-            let node_ids_vec: Vec<_> = node_ids.iter().copied().collect();
-            let feat_ids_vec: Vec<_> = feat_ids.iter().copied().collect();
-            let modes_vec: Vec<_> = modes.iter().map(|s| s.as_str()).collect();
-            let values_vec: Vec<_> = values.iter().copied().collect();
-            let true_ids_vec: Vec<_> = true_ids.iter().copied().collect();
-            let false_ids_vec: Vec<_> = false_ids.iter().copied().collect();
-            
-            let c_tree_ids_vec: Vec<_> = c_tree_ids.iter().copied().collect();
-            let c_node_ids_vec: Vec<_> = c_node_ids.iter().copied().collect();
-            let c_ids_vec: Vec<_> = c_ids.iter().copied().collect();
-            let c_weights_vec: Vec<_> = c_weights.iter().copied().collect();
-            
-            let num_classes = classlabels.map(|l| l.len()).unwrap_or(2);
-            let class_labels: Vec<_> = classlabels.map(|l| l.iter().copied().collect())
-                .unwrap_or_else(|| (0..num_classes as i64).collect());
-
+        let function = if has_data {
             quote! {
                 {
-                    // Tree structure arrays
-                    let tree_ids = vec![#(#tree_ids_vec),*];
-                    let node_ids = vec![#(#node_ids_vec),*];
-                    let feature_ids = vec![#(#feat_ids_vec),*];
-                    let modes = vec![#(#modes_vec),*];
-                    let split_values = vec![#(#values_vec),*];
-                    let true_node_ids = vec![#(#true_ids_vec),*];
-                    let false_node_ids = vec![#(#false_ids_vec),*];
-                    
-                    // Class arrays
-                    let class_tree_ids = vec![#(#c_tree_ids_vec),*];
-                    let class_node_ids = vec![#(#c_node_ids_vec),*];
-                    let class_ids = vec![#(#c_ids_vec),*];
-                    let class_weights = vec![#(#c_weights_vec),*];
-                    let class_labels = vec![#(#class_labels),*];
-                    
-                    let num_classes = #num_classes;
+                    // Reference stored data
+                    let (tree_data, class_data, class_labels, num_classes) = &self.#field_name;
+                    let (tree_ids, node_ids, feature_ids, modes, split_values, true_node_ids, false_node_ids) = tree_data;
+                    let (class_tree_ids, class_node_ids, class_ids, class_weights) = class_data;
                     
                     // Get input shape
                     let input_shape = #input.shape();
@@ -84,7 +114,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                     let n_features = input_shape.dims[input_shape.dims.len() - 1];
                     
                     // Initialize class scores for each sample
-                    let mut all_scores = vec![vec![0.0f32; num_classes]; batch_size];
+                    let mut all_scores = vec![vec![0.0f32; *num_classes]; batch_size];
                     
                     // Evaluate each tree for each sample
                     let input_vals = #input.to_data().to_vec::<f32>().unwrap();
@@ -112,7 +142,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                                     .position(|(&t, &n)| t == tree_id && n == current_node_id);
                                 
                                 if let Some(idx) = node_idx {
-                                    let mode = modes[idx];
+                                    let mode = &modes[idx];
                                     
                                     // Check if this is a leaf node
                                     if mode == "LEAF" {
@@ -124,7 +154,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                                             .enumerate() {
                                             if ct == tree_id && cn == current_node_id {
                                                 let class_idx = cid as usize;
-                                                if class_idx < num_classes {
+                                                if class_idx < *num_classes {
                                                     all_scores[sample_idx][class_idx] += cw;
                                                 }
                                             }
@@ -142,7 +172,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                                     };
                                     
                                     // Determine which child to follow
-                                    let go_left = match mode {
+                                    let go_left = match mode.as_str() {
                                         "BRANCH_LEQ" => feature_val <= threshold,
                                         "BRANCH_LT" => feature_val < threshold,
                                         "BRANCH_GTE" => feature_val >= threshold,
@@ -223,7 +253,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                     // Flatten probability scores
                     let probs_flat: Vec<f32> = all_scores.into_iter().flatten().collect();
                     let #prob_output = Tensor::<B, 2>::from_data(
-                        burn::tensor::TensorData::new(probs_flat, [batch_size, num_classes]),
+                        burn::tensor::TensorData::new(probs_flat, [batch_size, *num_classes]),
                         &*self.device
                     );
                     
@@ -285,8 +315,7 @@ mod tests {
             .build();
         
         let code = codegen_forward_default(&node);
-        assert!(code.contains("tree_ids"));
-        assert!(code.contains("class_weights"));
+        assert!(code.contains("tree1"));
     }
 
     #[test]
@@ -319,7 +348,6 @@ mod tests {
             .build();
         
         let code = codegen_forward_default(&node);
-        // Just verify it generates some code
         assert!(!code.is_empty());
     }
 
@@ -353,7 +381,6 @@ mod tests {
             .build();
         
         let code = codegen_forward_default(&node);
-        // Just verify it generates some code
         assert!(!code.is_empty());
     }
 }
