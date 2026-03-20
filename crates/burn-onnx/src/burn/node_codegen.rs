@@ -239,6 +239,7 @@ impl_node_codegen_dispatch! {
     Scaler,
     SVMRegressor,
     TreeEnsembleClassifier,
+    OneHotEncoder,
 
     // Special ops
     Attention,

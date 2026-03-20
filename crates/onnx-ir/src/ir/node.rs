@@ -327,6 +327,7 @@ define_node_enum! {
     // RANGE & SEQUENCE OPERATIONS
     Range => range::RangeNode,
     OneHot => one_hot::OneHotNode,
+    OneHotEncoder => one_hot_encoder::OneHotEncoderNode,
 
     // CONTROL FLOW
     If => if_node::IfNode,

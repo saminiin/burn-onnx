@@ -63,10 +63,10 @@ def main():
     input_data.tofile('input.bin')
     
     # Compute expected output using reference implementation
-    # For LINEAR kernel: prediction = (X @ SV^T) @ coefficients - rho
+    # For LINEAR kernel: prediction = (X @ SV^T) @ coefficients + rho
     sv_matrix = support_vectors.reshape(2, n_features)
     kernel_values = input_data @ sv_matrix.T  # [batch_size, n_supports]
-    output_data = (kernel_values @ coefficients - rho[0]).astype(np.float32)
+    output_data = (kernel_values @ coefficients + rho[0]).astype(np.float32)
     output_data.tofile('output.bin')
     
     print(f"Generated SVMRegressor test model")

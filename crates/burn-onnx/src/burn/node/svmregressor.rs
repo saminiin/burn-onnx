@@ -75,9 +75,9 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             // Compute kernel matrix: input @ sv^T [batch, n_supports]
                             let kernel_values = #input.matmul(sv.clone().transpose());
                             
-                            // prediction = kernel_values @ coefficients - rho
+                            // prediction = kernel_values @ coefficients + rho
                             // coef is already [n_supports, 1]
-                            let result = kernel_values.matmul(coef.clone()) - rho;
+                            let result = kernel_values.matmul(coef.clone()) + rho;
                             result
                         }
                     }
@@ -108,7 +108,7 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             }
                             
                             // coef is already [n_supports, 1]
-                            let result = kernel_values.matmul(coef.clone()) - rho;
+                            let result = kernel_values.matmul(coef.clone()) + rho;
                             result
                         }
                     }
@@ -132,7 +132,7 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             let kernel_values = (dot_products * gamma + coef0).powf_scalar(degree);
                             
                             // coef is already [n_supports, 1]
-                            let result = kernel_values.matmul(coef.clone()) - rho;
+                            let result = kernel_values.matmul(coef.clone()) + rho;
                             result
                         }
                     }
@@ -154,7 +154,7 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                             let kernel_values = (dot_products * gamma + coef0).tanh();
                             
                             // coef is already [n_supports, 1]
-                            let result = kernel_values.matmul(coef.clone()) - rho;
+                            let result = kernel_values.matmul(coef.clone()) + rho;
                             result
                         }
                     }

@@ -112,6 +112,7 @@ pub(crate) mod neg;
 pub(crate) mod nonzero;
 pub(crate) mod not;
 pub(crate) mod one_hot;
+pub(crate) mod one_hot_encoder;
 pub(crate) mod pad;
 pub(crate) mod pow;
 pub(crate) mod prelu;

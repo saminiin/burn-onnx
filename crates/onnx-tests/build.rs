@@ -268,6 +268,7 @@ fn add_all_inputs(model_gen: &mut ModelGen) {
         .input("tests/is_nan/is_nan.onnx")
         .input("tests/is_nan/is_nan_scalar.onnx")
         .input("tests/imputer/imputer.onnx")
+        .input("tests/imputer/imputer_per_feature.onnx")
         .input("tests/scaler/scaler.onnx")
         .input("tests/svmregressor/svmregressor.onnx")
         .input("tests/tree_ensemble_classifier/tree_ensemble_classifier.onnx")

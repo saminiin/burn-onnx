@@ -543,6 +543,10 @@ impl ProcessorRegistry {
             Box::new(crate::node::one_hot::OneHotProcessor),
         );
         registry.register(
+            NodeType::OneHotEncoder,
+            Box::new(crate::node::one_hot_encoder::OneHotEncoderProcessor),
+        );
+        registry.register(
             NodeType::Where,
             Box::new(crate::node::where_op::WhereProcessor),
         );

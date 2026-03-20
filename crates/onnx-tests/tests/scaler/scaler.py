@@ -47,7 +47,10 @@ def main():
     )
     
     model = helper.make_model(
-        graph, opset_imports=[helper.make_operatorsetid("ai.onnx.ml", OPSET_VERSION)]
+        graph, opset_imports=[
+            helper.make_operatorsetid("ai.onnx.ml", OPSET_VERSION),
+            helper.make_operatorsetid("", 17),  # Default domain opset
+        ]
     )
     
     onnx.save(model, "scaler.onnx")
