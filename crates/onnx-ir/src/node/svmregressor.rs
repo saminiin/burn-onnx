@@ -11,6 +11,7 @@ use onnx_ir_derive::NodeBuilder;
 /// Configuration for the SVMRegressor operator.
 ///
 /// Performs regression using Support Vector Machine (SVM) with various kernel types.
+#[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, Default, new)]
 pub struct SVMRegressorConfig {
     /// Coefficients for the support vector in the decision function.

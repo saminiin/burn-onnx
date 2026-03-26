@@ -52,9 +52,14 @@ impl NodeProcessor for OneHotEncoderProcessor {
         // Input validation
         let input_ty = match &node.inputs[0].ty {
             ArgType::Tensor(t) => t,
-            ArgType::Scalar(dtype) => {
+            ArgType::ScalarNative(dtype) => {
                 // Input is scalar, output will be scalar too
-                node.outputs[0].ty = ArgType::Scalar(*dtype);
+                node.outputs[0].ty = ArgType::ScalarNative(*dtype);
+                return Ok(());
+            }
+            ArgType::ScalarTensor(dtype) => {
+                // Input is scalar tensor, output will be scalar tensor too
+                node.outputs[0].ty = ArgType::ScalarTensor(*dtype);
                 return Ok(());
             }
             _ => {
@@ -71,7 +76,7 @@ impl NodeProcessor for OneHotEncoderProcessor {
 
         node.outputs[0].ty = if output_rank == 0 {
             // Rank-0 should be Scalar
-            ArgType::Scalar(input_ty.dtype)
+            ArgType::ScalarNative(input_ty.dtype)
         } else {
             ArgType::Tensor(TensorType {
                 dtype: input_ty.dtype,
@@ -88,11 +93,15 @@ impl NodeProcessor for OneHotEncoderProcessor {
         let mut cats_strings: Option<Vec<String>> = None;
         let mut zeros: Option<i64> = None;
 
-        log::debug!("OneHotEncoder '{}' has {} attributes", node.name, node.attrs.len());
-        
+        log::debug!(
+            "OneHotEncoder '{}' has {} attributes",
+            node.name,
+            node.attrs.len()
+        );
+
         for (key, value) in node.attrs.iter() {
             log::debug!("  Attribute '{}': {:?}", key, value);
-            
+
             match key.as_str() {
                 "cats_int64s" => {
                     if let crate::ir::AttributeValue::Int64s(ints) = value {
@@ -115,30 +124,33 @@ impl NodeProcessor for OneHotEncoderProcessor {
 
         // Validate: need either cats_int64s OR cats_strings
         if cats_int64s.is_none() && cats_strings.is_none() {
-            return Err(ProcessError::MissingAttribute(
-                format!("cats_int64s or cats_strings (required for OneHotEncoder in node '{}')", node.name)
-            ));
+            return Err(ProcessError::MissingAttribute(format!(
+                "cats_int64s or cats_strings (required for OneHotEncoder in node '{}')",
+                node.name
+            )));
         }
 
         // If we have cats_strings but not cats_int64s, try to parse strings as integers
-        let cats_int64s = if cats_int64s.is_none() && cats_strings.is_some() {
-            let strings = cats_strings.as_ref().unwrap();
-            let parsed: Result<Vec<i64>, _> = strings.iter()
-                .map(|s| s.parse::<i64>())
-                .collect();
-            
-            match parsed {
-                Ok(ints) => {
-                    log::debug!("Parsed cats_strings as integers: {:?}", ints);
-                    Some(ints)
-                }
-                Err(e) => {
-                    log::warn!("cats_strings contains non-numeric values, string categories not yet supported: {}", e);
-                    None
+        let cats_int64s = match (&cats_int64s, cats_strings.as_ref()) {
+            (None, Some(strings)) => {
+                let parsed: Result<Vec<i64>, _> =
+                    strings.iter().map(|s| s.parse::<i64>()).collect();
+
+                match parsed {
+                    Ok(ints) => {
+                        log::debug!("Parsed cats_strings as integers: {:?}", ints);
+                        Some(ints)
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "cats_strings contains non-numeric values, string categories not yet supported: {}",
+                            e
+                        );
+                        None
+                    }
                 }
             }
-        } else {
-            cats_int64s
+            _ => cats_int64s,
         };
 
         let config = OneHotEncoderConfig::new(cats_int64s, cats_strings, zeros);
@@ -146,21 +158,19 @@ impl NodeProcessor for OneHotEncoderProcessor {
     }
 
     fn build_node(&self, builder: RawNode, opset: usize) -> Node {
-        let config = self
-            .extract_config(&builder, opset)
-            .unwrap_or_else(|e| {
-                log::error!(
-                    "OneHotEncoder node '{}' configuration failed. \
+        let config = self.extract_config(&builder, opset).unwrap_or_else(|e| {
+            log::error!(
+                "OneHotEncoder node '{}' configuration failed. \
                      Requires 'cats_int64s' or 'cats_strings' attribute. \
                      Error: {}",
-                    builder.name,
-                    e
-                );
-                panic!(
-                    "OneHotEncoder node '{}' requires 'cats_int64s' or 'cats_strings' attribute",
-                    builder.name
-                )
-            });
+                builder.name,
+                e
+            );
+            panic!(
+                "OneHotEncoder node '{}' requires 'cats_int64s' or 'cats_strings' attribute",
+                builder.name
+            )
+        });
 
         Node::OneHotEncoder(OneHotEncoderNode {
             name: builder.name,

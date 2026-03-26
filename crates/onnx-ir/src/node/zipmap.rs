@@ -76,7 +76,7 @@ mod tests {
     #[test]
     fn test_zipmap_inference() {
         let input_ty = Ty::Tensor(ArgType::F32);
-        
+
         let mut node = RawNode {
             node_type: NodeType::ZipMap,
             name: "zipmap_test".to_string(),

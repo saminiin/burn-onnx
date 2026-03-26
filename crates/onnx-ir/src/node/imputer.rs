@@ -100,14 +100,12 @@ impl NodeProcessor for ImputerProcessor {
 
     fn build_node(&self, builder: RawNode, opset: usize) -> Node {
         let config = self.extract_config(&builder, opset).unwrap();
-        Node::Imputer(
-            ImputerNode::new(
-                builder.name,
-                builder.inputs,
-                builder.outputs,
-                config,
-            ),
-        )
+        Node::Imputer(ImputerNode::new(
+            builder.name,
+            builder.inputs,
+            builder.outputs,
+            config,
+        ))
     }
 }
 

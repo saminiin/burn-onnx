@@ -12,7 +12,7 @@ mod tests {
 
     #[test]
     fn svmregressor_linear() {
-    let device = Default::default();
+        let device = Default::default();
         let model: svmregressor::Model<TestBackend> = svmregressor::Model::new(&device);
 
         // Input: [3, 2]

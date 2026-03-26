@@ -607,7 +607,7 @@ pub fn convert_node_proto(node: &NodeProto, graph_data: &GraphState) -> RawNode 
     let node_type = NodeType::from_str(&node.op_type).unwrap_or_else(|e| {
         panic!("Unknown node type '{}': {:?}", node.op_type, e);
     });
-    
+
     RawNode {
         node_type,
         name,

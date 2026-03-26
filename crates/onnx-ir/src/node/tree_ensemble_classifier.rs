@@ -1,8 +1,6 @@
 use crate::{
     ir::{Argument, AttributeValue, Node, RawNode},
-    processor::{
-        InputSpec, NodeProcessor, NodeSpec, OutputPreferences, OutputSpec, ProcessError,
-    },
+    processor::{InputSpec, NodeProcessor, NodeSpec, OutputPreferences, OutputSpec, ProcessError},
 };
 use derive_new::new;
 use onnx_ir_derive::NodeBuilder;
@@ -10,6 +8,7 @@ use onnx_ir_derive::NodeBuilder;
 /// Configuration for the TreeEnsembleClassifier operator.
 ///
 /// Performs classification using a tree ensemble (e.g., random forest, gradient boosted trees).
+#[allow(clippy::too_many_arguments)]
 #[derive(Debug, Clone, Default, new)]
 pub struct TreeEnsembleClassifierConfig {
     /// Base values for each class (optional)
@@ -81,21 +80,21 @@ impl NodeProcessor for TreeEnsembleClassifierProcessor {
         _output_preferences: &OutputPreferences,
     ) -> Result<(), ProcessError> {
         use crate::ir::{ArgType, DType, TensorType};
-        
+
         // First output is labels (int64 tensor with rank 1: [batch_size])
         node.outputs[0].ty = ArgType::Tensor(TensorType {
             dtype: DType::I64,
             rank: 1,
             static_shape: None,
         });
-        
+
         // Second output is probabilities (float tensor with rank 2: [batch_size, num_classes])
         node.outputs[1].ty = ArgType::Tensor(TensorType {
             dtype: DType::F32,
             rank: 2,
             static_shape: None,
         });
-        
+
         Ok(())
     }
 
@@ -292,12 +291,7 @@ mod tests {
             None,
             None,
         );
-        let node = TreeEnsembleClassifierNode::new(
-            "test_tree".to_string(),
-            vec![],
-            vec![],
-            config,
-        );
+        let node = TreeEnsembleClassifierNode::new("test_tree".to_string(), vec![], vec![], config);
 
         assert_eq!(node.name, "test_tree");
         assert!(node.config.class_ids.is_some());

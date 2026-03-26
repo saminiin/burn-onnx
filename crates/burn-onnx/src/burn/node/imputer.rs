@@ -15,13 +15,14 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
         let input = scope.arg(input_arg);
 
         let function = match &input_arg.ty {
-            ArgType::Scalar(scalar_ty) => {
+            ArgType::ScalarNative(scalar_ty) => {
                 // Handle scalar inputs
                 match scalar_ty {
                     DType::F32 | DType::F64 => {
                         if let Some(imputed_floats) = &self.config.imputed_value_floats {
                             if let Some(first_value) = imputed_floats.first() {
-                                let replaced_value = self.config.replaced_value_float.unwrap_or(f32::NAN);
+                                let replaced_value =
+                                    self.config.replaced_value_float.unwrap_or(f32::NAN);
                                 quote! { if #input.clone().is_nan() || #input == #replaced_value { #first_value } else { #input } }
                             } else {
                                 quote! { #input }
@@ -30,7 +31,7 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                             quote! { #input }
                         }
                     }
-                    _ => quote! { #input }
+                    _ => quote! { #input },
                 }
             }
             ArgType::Tensor(tensor_ty) => {
@@ -38,8 +39,9 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                 match tensor_ty.dtype {
                     DType::F32 | DType::F64 => {
                         if let Some(imputed_floats) = &self.config.imputed_value_floats {
-                            let replaced_value = self.config.replaced_value_float.unwrap_or(f32::NAN);
-                            
+                            let replaced_value =
+                                self.config.replaced_value_float.unwrap_or(f32::NAN);
+
                             if imputed_floats.len() == 1 {
                                 let imputed_value = imputed_floats[0];
                                 if replaced_value.is_nan() {
@@ -61,7 +63,7 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                                 // Multiple imputed values per feature.
                                 // Build a feature vector tensor and broadcast it over the input shape,
                                 // then apply mask_where element-wise to avoid cross-feature mask bleed.
-                                let imputed_values_vec: Vec<_> = imputed_floats.iter().copied().collect();
+                                let imputed_values_vec: Vec<_> = imputed_floats.to_vec();
                                 let imputed_values_len = imputed_values_vec.len();
                                 let dtype_tokens = tensor_ty.dtype.to_tokens();
                                 let reshape_dims: Vec<_> = (0..tensor_ty.rank.saturating_sub(1))
@@ -108,7 +110,7 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                         if let Some(imputed_ints) = &self.config.imputed_value_ints {
                             if let Some(replaced_value) = self.config.replaced_value_float {
                                 let replaced_int = replaced_value as i64;
-                                
+
                                 if imputed_ints.len() == 1 {
                                     let imputed_value = imputed_ints[0];
                                     quote! {
@@ -121,13 +123,14 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                                     // Multiple imputed values per feature.
                                     // Build a feature vector tensor and broadcast it over the input shape,
                                     // then apply mask_where element-wise to avoid cross-feature mask bleed.
-                                    let imputed_values_vec: Vec<_> = imputed_ints.iter().copied().collect();
+                                    let imputed_values_vec: Vec<_> = imputed_ints.to_vec();
                                     let imputed_values_len = imputed_values_vec.len();
                                     let dtype_tokens = tensor_ty.dtype.to_tokens();
-                                    let reshape_dims: Vec<_> = (0..tensor_ty.rank.saturating_sub(1))
-                                        .map(|_| quote! { 1usize })
-                                        .chain(std::iter::once(quote! { #imputed_values_len }))
-                                        .collect();
+                                    let reshape_dims: Vec<_> =
+                                        (0..tensor_ty.rank.saturating_sub(1))
+                                            .map(|_| quote! { 1usize })
+                                            .chain(std::iter::once(quote! { #imputed_values_len }))
+                                            .collect();
                                     quote! {
                                         {
                                             let mask = #input.clone().equal_elem(#replaced_int);
@@ -150,10 +153,10 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                             quote! { #input.clone() }
                         }
                     }
-                    _ => quote! { #input.clone() }
+                    _ => quote! { #input.clone() },
                 }
             }
-            _ => quote! { #input.clone() }
+            _ => quote! { #input.clone() },
         };
 
         quote! {
@@ -168,8 +171,8 @@ mod tests {
     use burn::tensor::DType;
     use insta::assert_snapshot;
     use onnx_ir::imputer::ImputerConfig;
-    use onnx_ir::ir::{ArgType, TensorType};
     use onnx_ir::imputer::ImputerNode;
+    use onnx_ir::ir::{ArgType, TensorType};
 
     #[test]
     fn test_imputer_single_float() {

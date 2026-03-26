@@ -16,7 +16,7 @@ impl NodeCodegen for onnx_ir::scaler::ScalerNode {
 
         // Generate the transformation based on input type
         let function = match &input_arg.ty {
-            ArgType::Scalar(_) => {
+            ArgType::ScalarNative(_) => {
                 // Scalar case: use first element of scale/offset arrays
                 let scale = self.config.scale.as_ref().and_then(|s| s.first()).copied();
                 let offset = self.config.offset.as_ref().and_then(|o| o.first()).copied();
@@ -37,7 +37,7 @@ impl NodeCodegen for onnx_ir::scaler::ScalerNode {
                 // Tensor case: per-feature scaling
                 // Formula: Y = (X - offset) * scale
                 // Scale and offset are applied element-wise along the last dimension (feature dimension)
-                
+
                 let has_offset = self.config.offset.is_some();
                 let has_scale = self.config.scale.is_some();
                 let input_rank = tensor_type.rank;
@@ -52,12 +52,12 @@ impl NodeCodegen for onnx_ir::scaler::ScalerNode {
 
                 match (has_offset, has_scale) {
                     (true, true) => {
-                        // Both offset and scale  
-                        let offset_values: Vec<_> = self.config.offset.as_ref().unwrap().iter().copied().collect();
-                        let scale_values: Vec<_> = self.config.scale.as_ref().unwrap().iter().copied().collect();
+                        // Both offset and scale
+                        let offset_values: Vec<_> = self.config.offset.as_ref().unwrap().to_vec();
+                        let scale_values: Vec<_> = self.config.scale.as_ref().unwrap().to_vec();
                         let num_features = offset_values.len();
                         let reshape_dims = create_reshape_dims(num_features);
-                        
+
                         quote! {
                             {
                                 // Create offset and scale tensors, reshape to broadcast along feature dimension
@@ -65,7 +65,7 @@ impl NodeCodegen for onnx_ir::scaler::ScalerNode {
                                     .reshape([#(#reshape_dims),*]);
                                 let scale_tensor = Tensor::<B, 1>::from_floats([#(#scale_values),*], &*self.device)
                                     .reshape([#(#reshape_dims),*]);
-                                
+
                                 // Apply formula: (input - offset) * scale with broadcasting
                                 (#input.clone() - offset_tensor) * scale_tensor
                             }
@@ -73,10 +73,10 @@ impl NodeCodegen for onnx_ir::scaler::ScalerNode {
                     }
                     (true, false) => {
                         // Only offset
-                        let offset_values: Vec<_> = self.config.offset.as_ref().unwrap().iter().copied().collect();
+                        let offset_values: Vec<_> = self.config.offset.as_ref().unwrap().to_vec();
                         let num_features = offset_values.len();
                         let reshape_dims = create_reshape_dims(num_features);
-                        
+
                         quote! {
                             {
                                 let offset_tensor = Tensor::<B, 1>::from_floats([#(#offset_values),*], &*self.device)
@@ -87,10 +87,10 @@ impl NodeCodegen for onnx_ir::scaler::ScalerNode {
                     }
                     (false, true) => {
                         // Only scale
-                        let scale_values: Vec<_> = self.config.scale.as_ref().unwrap().iter().copied().collect();
+                        let scale_values: Vec<_> = self.config.scale.as_ref().unwrap().to_vec();
                         let num_features = scale_values.len();
                         let reshape_dims = create_reshape_dims(num_features);
-                        
+
                         quote! {
                             {
                                 let scale_tensor = Tensor::<B, 1>::from_floats([#(#scale_values),*], &*self.device)
@@ -122,8 +122,8 @@ mod tests {
     use super::super::test_helpers::*;
     use burn::tensor::DType;
     use insta::assert_snapshot;
-    use onnx_ir::scaler::ScalerConfig;
     use onnx_ir::ir::{ArgType, TensorType};
+    use onnx_ir::scaler::ScalerConfig;
     use onnx_ir::scaler::ScalerNode;
 
     #[test]
