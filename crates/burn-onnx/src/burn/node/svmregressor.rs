@@ -90,22 +90,19 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
                         {
                             let rho = #rho;
                             let gamma = #gamma;
-                            let n_supports = #n_supports;
                             let (coef, sv) = &self.#field_name;
                             
                             // Compute RBF kernel: K(x, sv) = exp(-gamma * ||x - sv||^2)
                             let input_shape = #input.shape();
                             let batch_size = input_shape.dims[0];
-                            
-                            // Compute squared distances
-                            let mut kernel_values = Tensor::<B, 2>::zeros([batch_size, n_supports], &*self.device);
-                            for i in 0..n_supports {
-                                let sv_i = sv.clone().narrow(0, i, 1); // Shape: [1, n_features]
-                                let diff = #input.clone() - sv_i; // Broadcasting: [batch, n_features] - [1, n_features]
-                                let sq_dist = diff.clone().powf_scalar(2.0).sum_dim(1);
-                                let kernel_val = (-gamma * sq_dist).exp().reshape([batch_size, 1]);
-                                kernel_values = kernel_values.slice_assign([0..batch_size as i64, i as i64..(i + 1) as i64], kernel_val);
-                            }
+
+                            // Vectorized squared distance computation using:
+                            // ||x - s||^2 = ||x||^2 + ||s||^2 - 2 * x·s
+                            let dot_products = #input.clone().matmul(sv.clone().transpose()); // [batch_size, n_supports]
+                            let input_norms = #input.clone().powf_scalar(2.0).sum_dim(1).reshape([batch_size, 1]);
+                            let sv_norms = sv.clone().powf_scalar(2.0).sum_dim(1).reshape([1, #n_supports]);
+                            let sq_distances = input_norms + sv_norms - dot_products * 2.0;
+                            let kernel_values = (-gamma * sq_distances).exp();
                             
                             // coef is already [n_supports, 1]
                             let result = kernel_values.matmul(coef.clone()) + rho;
