@@ -33,11 +33,11 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
             quote! {
                 let #name = (
                     Tensor::<B, 2>::from_data(
-                        burn::tensor::TensorData::new(vec![#(#coef_data),*], [#n_supports, 1]),
+                        burn::tensor::TensorData::new(alloc::vec![#(#coef_data),*], [#n_supports, 1]),
                         device
                     ),
                     Tensor::<B, 2>::from_data(
-                        burn::tensor::TensorData::new(vec![#(#sv_data),*], [#n_supports, #n_features]),
+                        burn::tensor::TensorData::new(alloc::vec![#(#sv_data),*], [#n_supports, #n_features]),
                         device
                     )
                 );
@@ -179,7 +179,7 @@ impl NodeCodegen for onnx_ir::svmregressor::SVMRegressorNode {
             "SOFTMAX_ZERO" => quote! { {
                 let y = #kernel_computation;
                 let zeros = y.zeros_like();
-                let combined = Tensor::cat(vec![y, zeros], 0);
+                let combined = Tensor::cat(alloc::vec![y, zeros], 0);
                 combined.exp() / combined.exp().sum_dim(0)
             } },
             "PROBIT" => quote! { { let y = #kernel_computation; y } }, // Probit requires special functions

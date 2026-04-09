@@ -17,23 +17,24 @@ mod tests {
 
         // Input: [3, 2]
         let input = Tensor::<TestBackend, 2>::from_floats(
-            burn_ndarray::from_slice(&tree_ensemble_classifier::INPUT),
+            [
+                [0.49671414f32, -0.13826430],
+                [0.64768857,  1.52302980],
+                [-0.23415338, -0.23413695],
+            ],
             &device,
-        )
-        .reshape([3, 2]);
+        );
 
         let (labels, probs) = model.forward(input);
 
         let expected_labels = Tensor::<TestBackend, 1, burn::tensor::Int>::from_ints(
-            burn_ndarray::from_slice(&tree_ensemble_classifier::OUTPUT_LABELS),
+            [0i64, 1, 0],
             &device,
-        )
-        .reshape([3]);
+        );
         let expected_probs = Tensor::<TestBackend, 2>::from_floats(
-            burn_ndarray::from_slice(&tree_ensemble_classifier::OUTPUT_PROBS),
+            [[1.0f32, 0.0], [0.0, 1.0], [1.0, 0.0]],
             &device,
-        )
-        .reshape([3, 2]);
+        );
 
         labels.to_data().assert_eq(&expected_labels.to_data(), true);
         probs

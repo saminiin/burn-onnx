@@ -74,10 +74,9 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                                     quote! {
                                         {
                                             let mask = #input.clone().is_nan();
-                                            let imputed_values = Tensor::<B, 1>::from_data_dtype(
+                                            let imputed_values = Tensor::<B, 1>::from_data(
                                                 burn::tensor::TensorData::from([#((#imputed_values_vec) as f64),*]),
-                                                &*self.device,
-                                                #dtype_tokens
+                                                (&*self.device, #dtype_tokens)
                                             )
                                             .reshape([#(#reshape_dims),*])
                                             .expand(#input.dims());
@@ -89,10 +88,9 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                                     quote! {
                                         {
                                             let mask = #input.clone().equal_elem(#replaced_value);
-                                            let imputed_values = Tensor::<B, 1>::from_data_dtype(
+                                            let imputed_values = Tensor::<B, 1>::from_data(
                                                 burn::tensor::TensorData::from([#((#imputed_values_vec) as f64),*]),
-                                                &*self.device,
-                                                #dtype_tokens
+                                                (&*self.device, #dtype_tokens)
                                             )
                                             .reshape([#(#reshape_dims),*])
                                             .expand(#input.dims());
@@ -134,10 +132,9 @@ impl NodeCodegen for onnx_ir::imputer::ImputerNode {
                                     quote! {
                                         {
                                             let mask = #input.clone().equal_elem(#replaced_int);
-                                            let imputed_values = Tensor::<B, 1, burn::tensor::Int>::from_data_dtype(
+                                            let imputed_values = Tensor::<B, 1, burn::tensor::Int>::from_data(
                                                 burn::tensor::TensorData::from([#(#imputed_values_vec),*]),
-                                                &*self.device,
-                                                #dtype_tokens
+                                                (&*self.device, #dtype_tokens)
                                             )
                                             .reshape([#(#reshape_dims),*])
                                             .expand(#input.dims());
@@ -242,14 +239,13 @@ mod tests {
                 let imputed_values = Tensor::<
                     B,
                     1,
-                >::from_data_dtype(
+                >::from_data(
                         burn::tensor::TensorData::from([
                             (0f32) as f64,
                             (1f32) as f64,
                             (2f32) as f64,
                         ]),
-                        &*self.device,
-                        burn::tensor::DType::F32,
+                        (&*self.device, burn::tensor::DType::F32),
                     )
                     .reshape([1usize, 3usize])
                     .expand(input.dims());

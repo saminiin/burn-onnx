@@ -63,29 +63,29 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
         Some(Field::new(
             &self.name,
             quote! { (
-                (Vec<i64>, Vec<i64>, Vec<i64>, Vec<String>, Vec<f32>, Vec<i64>, Vec<i64>),
-                (Vec<i64>, Vec<i64>, Vec<i64>, Vec<f32>),
-                Vec<i64>,
+                (alloc::vec::Vec<i64>, alloc::vec::Vec<i64>, alloc::vec::Vec<i64>, alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<f32>, alloc::vec::Vec<i64>, alloc::vec::Vec<i64>),
+                (alloc::vec::Vec<i64>, alloc::vec::Vec<i64>, alloc::vec::Vec<i64>, alloc::vec::Vec<f32>),
+                alloc::vec::Vec<i64>,
                 usize
             ) },
             quote! {
                 let #name = (
                     (
-                        vec![#(#tree_ids_data),*],
-                        vec![#(#node_ids_data),*],
-                        vec![#(#feat_ids_data),*],
-                        vec![#(#modes_data.to_string()),*],
-                        vec![#(#values_data),*],
-                        vec![#(#true_ids_data),*],
-                        vec![#(#false_ids_data),*]
+                        alloc::vec![#(#tree_ids_data),*],
+                        alloc::vec![#(#node_ids_data),*],
+                        alloc::vec![#(#feat_ids_data),*],
+                        alloc::vec![#(alloc::string::String::from(#modes_data)),*],
+                        alloc::vec![#(#values_data),*],
+                        alloc::vec![#(#true_ids_data),*],
+                        alloc::vec![#(#false_ids_data),*]
                     ),
                     (
-                        vec![#(#c_tree_ids_data),*],
-                        vec![#(#c_node_ids_data),*],
-                        vec![#(#c_ids_data),*],
-                        vec![#(#c_weights_data),*]
+                        alloc::vec![#(#c_tree_ids_data),*],
+                        alloc::vec![#(#c_node_ids_data),*],
+                        alloc::vec![#(#c_ids_data),*],
+                        alloc::vec![#(#c_weights_data),*]
                     ),
-                    vec![#(#class_labels),*],
+                    alloc::vec![#(#class_labels),*],
                     #num_classes
                 );
             },
@@ -114,12 +114,10 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                     let (class_tree_ids, class_node_ids, class_ids, class_weights) = class_data;
 
                     // Get input shape
-                    let input_shape = #input.shape();
-                    let batch_size = input_shape.dims[0];
-                    let n_features = input_shape.dims[input_shape.dims.len() - 1];
+                    let [batch_size, n_features] = #input.shape().dims();
 
                     // Initialize class scores for each sample
-                    let mut all_scores = vec![vec![0.0f32; *num_classes]; batch_size];
+                    let mut all_scores = alloc::vec![alloc::vec![0.0f32; *num_classes]; batch_size];
 
                     // Evaluate each tree for each sample
                     let input_vals = #input.to_data().to_vec::<f32>().unwrap();
@@ -127,7 +125,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                     for sample_idx in 0..batch_size {
                         // Extract features for this sample
                         let sample_offset = sample_idx * n_features;
-                        let sample_features: Vec<f32> = input_vals[sample_offset..sample_offset + n_features].to_vec();
+                        let sample_features: alloc::vec::Vec<f32> = input_vals[sample_offset..sample_offset + n_features].to_vec();
 
                         // Find unique tree IDs
                         let mut unique_trees = tree_ids.clone();
@@ -207,7 +205,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                             // Apply softmax to scores
                             for scores in &mut all_scores {
                                 let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                                let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
+                                let exp_scores: alloc::vec::Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
                                 let sum: f32 = exp_scores.iter().sum();
                                 for (i, &exp_s) in exp_scores.iter().enumerate() {
                                     scores[i] = exp_s / sum;
@@ -227,7 +225,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                             for scores in &mut all_scores {
                                 scores.push(0.0);
                                 let max_score = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                                let exp_scores: Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
+                                let exp_scores: alloc::vec::Vec<f32> = scores.iter().map(|&s| (s - max_score).exp()).collect();
                                 let sum: f32 = exp_scores.iter().sum();
                                 for (i, &exp_s) in exp_scores.iter().enumerate() {
                                     scores[i] = exp_s / sum;
@@ -239,11 +237,11 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                     }
 
                     // Find argmax for each sample (predicted class)
-                    let mut labels = Vec::with_capacity(batch_size);
+                    let mut labels = alloc::vec::Vec::with_capacity(batch_size);
                     for scores in &all_scores {
                         let max_idx = scores.iter()
                             .enumerate()
-                            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                            .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(core::cmp::Ordering::Equal))
                             .map(|(idx, _)| idx)
                             .unwrap_or(0);
                         labels.push(class_labels[max_idx]);
@@ -256,7 +254,7 @@ impl NodeCodegen for onnx_ir::tree_ensemble_classifier::TreeEnsembleClassifierNo
                     );
 
                     // Flatten probability scores
-                    let probs_flat: Vec<f32> = all_scores.into_iter().flatten().collect();
+                    let probs_flat: alloc::vec::Vec<f32> = all_scores.into_iter().flatten().collect();
                     let #prob_output = Tensor::<B, 2>::from_data(
                         burn::tensor::TensorData::new(probs_flat, [batch_size, *num_classes]),
                         &*self.device

@@ -71,27 +71,22 @@ impl NodeProcessor for ZipMapProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{ArgType, ArgumentInfo, NodeType, Ty};
+    use crate::ir::{ArgType, DType, NodeType, TensorType};
+    use crate::node::test_utils::TestNodeBuilder;
+    use crate::processor::OutputPreferences;
 
     #[test]
     fn test_zipmap_inference() {
-        let input_ty = Ty::Tensor(ArgType::F32);
+        let input_ty = ArgType::Tensor(TensorType {
+            dtype: DType::F32,
+            rank: 2,
+            static_shape: None,
+        });
 
-        let mut node = RawNode {
-            node_type: NodeType::ZipMap,
-            name: "zipmap_test".to_string(),
-            inputs: vec![Argument {
-                name: "input".to_string(),
-                ty: input_ty.clone(),
-                info: ArgumentInfo::default(),
-            }],
-            outputs: vec![Argument {
-                name: "output".to_string(),
-                ty: Ty::Unknown,
-                info: ArgumentInfo::default(),
-            }],
-            attrs: Default::default(),
-        };
+        let mut node = TestNodeBuilder::new(NodeType::ZipMap, "zipmap_test")
+            .add_input("input", input_ty.clone())
+            .add_output("output", ArgType::Tensor(TensorType::default()))
+            .build();
 
         let processor = ZipMapProcessor;
         processor
