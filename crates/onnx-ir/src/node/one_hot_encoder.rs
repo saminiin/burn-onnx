@@ -211,8 +211,8 @@ mod tests {
         input_rank: usize,
         input_static_shape: Option<Vec<usize>>,
     ) -> TestNodeBuilder {
-        let builder = TestNodeBuilder::new(NodeType::OneHotEncoder, "test_ohe")
-            .output_default("output");
+        let builder =
+            TestNodeBuilder::new(NodeType::OneHotEncoder, "test_ohe").output_default("output");
 
         match input_dtype {
             DType::F32 => builder.input_tensor_f32("input", input_rank, input_static_shape),
@@ -226,8 +226,7 @@ mod tests {
 
     #[test]
     fn test_onehotencoder_config_int_categories() {
-        let config =
-            OneHotEncoderConfig::new(Some(vec![0, 1, 2, 3]), None, Some(1));
+        let config = OneHotEncoderConfig::new(Some(vec![0, 1, 2, 3]), None, Some(1));
         assert_eq!(config.cats_int64s.as_ref().unwrap().len(), 4);
         assert!(config.cats_strings.is_none());
         assert_eq!(config.zeros, Some(1));
@@ -243,14 +242,8 @@ mod tests {
 
     #[test]
     fn test_onehotencoder_node_builder() {
-        let config =
-            OneHotEncoderConfig::new(Some(vec![0, 1, 2]), None, None);
-        let node = OneHotEncoderNode::new(
-            "test_ohe".to_string(),
-            vec![],
-            vec![],
-            config,
-        );
+        let config = OneHotEncoderConfig::new(Some(vec![0, 1, 2]), None, None);
+        let node = OneHotEncoderNode::new("test_ohe".to_string(), vec![], vec![], config);
         assert_eq!(node.name, "test_ohe");
         assert_eq!(node.config.cats_int64s.as_ref().unwrap().len(), 3);
     }
@@ -278,7 +271,10 @@ mod tests {
         let config = processor.extract_config(&node, 1).unwrap();
 
         assert_eq!(config.cats_int64s, Some(vec![0, 1, 2]));
-        assert_eq!(config.cats_strings, Some(vec!["a".to_string(), "b".to_string()]));
+        assert_eq!(
+            config.cats_strings,
+            Some(vec!["a".to_string(), "b".to_string()])
+        );
         assert_eq!(config.zeros, Some(0));
     }
 
@@ -323,9 +319,10 @@ mod tests {
 
     #[test]
     fn test_infer_types_rejects_unsupported_input_dtype() {
-        let mut node = make_node_builder(DType::Bool(crate::ir::BoolStore::Native), 1, Some(vec![3]))
-            .attr_ints("cats_int64s", vec![0, 1])
-            .build();
+        let mut node =
+            make_node_builder(DType::Bool(crate::ir::BoolStore::Native), 1, Some(vec![3]))
+                .attr_ints("cats_int64s", vec![0, 1])
+                .build();
 
         let processor = OneHotEncoderProcessor;
         let prefs = OutputPreferences::new();

@@ -57,11 +57,7 @@ mod tests {
             Tensor::from_data(TensorData::from([2i64, 1, 0]), (&device, DType::I64));
         let output: Tensor<2> = model.forward(input);
 
-        let expected = TensorData::from([
-            [0.0f32, 0.0, 1.0],
-            [0.0, 1.0, 0.0],
-            [1.0, 0.0, 0.0],
-        ]);
+        let expected = TensorData::from([[0.0f32, 0.0, 1.0], [0.0, 1.0, 0.0], [1.0, 0.0, 0.0]]);
 
         output
             .to_data()
