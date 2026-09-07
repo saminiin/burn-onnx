@@ -202,6 +202,27 @@ impl OneHotEncoderProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::NodeType;
+    use crate::node::test_utils::TestNodeBuilder;
+    use crate::processor::OutputPreferences;
+
+    fn make_node_builder(
+        input_dtype: DType,
+        input_rank: usize,
+        input_static_shape: Option<Vec<usize>>,
+    ) -> TestNodeBuilder {
+        let builder = TestNodeBuilder::new(NodeType::OneHotEncoder, "test_ohe")
+            .output_default("output");
+
+        match input_dtype {
+            DType::F32 => builder.input_tensor_f32("input", input_rank, input_static_shape),
+            DType::F64 => builder.input_tensor_f64("input", input_rank, input_static_shape),
+            DType::I32 => builder.input_tensor_i32("input", input_rank, input_static_shape),
+            DType::I64 => builder.input_tensor_i64("input", input_rank, input_static_shape),
+            DType::Bool(_) => builder.input_tensor_bool("input", input_rank, input_static_shape),
+            _ => panic!("unsupported test dtype"),
+        }
+    }
 
     #[test]
     fn test_onehotencoder_config_int_categories() {
@@ -232,5 +253,95 @@ mod tests {
         );
         assert_eq!(node.name, "test_ohe");
         assert_eq!(node.config.cats_int64s.as_ref().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn test_spec_is_opset1_single_input_single_output() {
+        let processor = OneHotEncoderProcessor;
+        let spec = processor.spec();
+
+        assert_eq!(spec.min_opset, 1);
+        assert_eq!(spec.max_opset, None);
+        assert!(matches!(spec.inputs, InputSpec::Exact(1)));
+        assert!(matches!(spec.outputs, OutputSpec::Exact(1)));
+    }
+
+    #[test]
+    fn test_extract_config_reads_all_supported_attributes() {
+        let node = make_node_builder(DType::I64, 1, Some(vec![4]))
+            .attr_ints("cats_int64s", vec![0, 1, 2])
+            .attr_strings("cats_strings", vec!["a".to_string(), "b".to_string()])
+            .attr_int("zeros", 0)
+            .build();
+
+        let processor = OneHotEncoderProcessor;
+        let config = processor.extract_config(&node, 1).unwrap();
+
+        assert_eq!(config.cats_int64s, Some(vec![0, 1, 2]));
+        assert_eq!(config.cats_strings, Some(vec!["a".to_string(), "b".to_string()]));
+        assert_eq!(config.zeros, Some(0));
+    }
+
+    #[test]
+    fn test_infer_types_sets_rank_and_static_shape_from_int_categories() {
+        let mut node = make_node_builder(DType::F32, 2, Some(vec![2, 3]))
+            .attr_ints("cats_int64s", vec![10, 20, 30, 40])
+            .build();
+
+        let processor = OneHotEncoderProcessor;
+        let prefs = OutputPreferences::new();
+        processor.infer_types(&mut node, 1, &prefs).unwrap();
+
+        match &node.outputs[0].ty {
+            ArgType::Tensor(t) => {
+                assert_eq!(t.dtype, DType::F32);
+                assert_eq!(t.rank, 3);
+                assert_eq!(t.static_shape, Some(vec![Some(2), Some(3), Some(4)]));
+            }
+            other => panic!("expected tensor output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_infer_types_sets_partial_static_shape_when_input_shape_unknown() {
+        let mut node = make_node_builder(DType::I64, 1, None)
+            .attr_ints("cats_int64s", vec![0, 1, 2])
+            .build();
+
+        let processor = OneHotEncoderProcessor;
+        let prefs = OutputPreferences::new();
+        processor.infer_types(&mut node, 1, &prefs).unwrap();
+
+        match &node.outputs[0].ty {
+            ArgType::Tensor(t) => {
+                assert_eq!(t.rank, 2);
+                assert_eq!(t.static_shape, Some(vec![None, Some(3)]));
+            }
+            other => panic!("expected tensor output, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_infer_types_rejects_unsupported_input_dtype() {
+        let mut node = make_node_builder(DType::Bool(crate::ir::BoolStore::Native), 1, Some(vec![3]))
+            .attr_ints("cats_int64s", vec![0, 1])
+            .build();
+
+        let processor = OneHotEncoderProcessor;
+        let prefs = OutputPreferences::new();
+        let err = processor.infer_types(&mut node, 1, &prefs).unwrap_err();
+
+        assert!(matches!(err, ProcessError::TypeMismatch { .. }));
+    }
+
+    #[test]
+    fn test_infer_types_requires_categories_attribute() {
+        let mut node = make_node_builder(DType::F32, 1, Some(vec![3])).build();
+
+        let processor = OneHotEncoderProcessor;
+        let prefs = OutputPreferences::new();
+        let err = processor.infer_types(&mut node, 1, &prefs).unwrap_err();
+
+        assert!(matches!(err, ProcessError::MissingAttribute(_)));
     }
 }
