@@ -151,6 +151,7 @@ pub mod relu;
 pub mod reshape;
 pub mod resize;
 pub mod rnn;
+pub mod one_hot_encoder;
 pub mod scaler;
 pub mod scan_node;
 pub mod scatter_elements;

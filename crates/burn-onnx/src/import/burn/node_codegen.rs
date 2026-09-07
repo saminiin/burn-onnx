@@ -371,6 +371,7 @@ impl_node_codegen_dispatch! {
 
     // ML ops
     Imputer,
+    OneHotEncoder,
     Scaler,
     SVMRegressor,
 

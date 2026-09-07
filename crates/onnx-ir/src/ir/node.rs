@@ -446,6 +446,7 @@ define_node_enum! {
     Multinomial => unsupported::MultinomialNode,
     NegativeLogLikelihoodLoss => unsupported::NegativeLogLikelihoodLossNode,
     NonMaxSuppression => non_max_suppression::NonMaxSuppressionNode,
+    OneHotEncoder => one_hot_encoder::OneHotEncoderNode,
     Optional => unsupported::OptionalNode,
     OptionalGetElement => unsupported::OptionalGetElementNode,
     OptionalHasElement => unsupported::OptionalHasElementNode,

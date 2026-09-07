@@ -131,6 +131,7 @@ functionality.
 | [NonZero][113]                   | ✅             | ✅           |
 | [Not][114]                       | ✅             | ✅           |
 | [OneHot][115]                    | ✅             | ✅           |
+| [OneHotEncoder][208]             | ✅             | ✅           |
 | [Optional][116]                  | ❌             | ❌           |
 | [OptionalGetElement][117]        | ❌             | ❌           |
 | [OptionalHasElement][118]        | ❌             | ❌           |
@@ -423,6 +424,7 @@ functionality.
 [205]: https://onnx.ai/onnx/operators/onnx_aionnxml_Imputer.html "ONNX Imputer"
 [206]: https://onnx.ai/onnx/operators/onnx_aionnxml_Scaler.html "ONNX Scaler"
 [207]: https://onnx.ai/onnx/operators/onnx_aionnxml_SVMRegressor.html "ONNX SVMRegressor"
+[208]: https://onnx.ai/onnx/operators/onnx_aionnxml_OneHotEncoder.html "ONNX OneHotEncoder"
 
 ## Pattern Coalescing
 

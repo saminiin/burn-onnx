@@ -305,6 +305,10 @@ impl ProcessorRegistry {
             Box::new(crate::node::unsupported::UnsupportedProcessor),
         );
         registry.register(
+            NodeType::OneHotEncoder,
+            Box::new(crate::node::one_hot_encoder::OneHotEncoderProcessor),
+        );
+        registry.register(
             NodeType::CumSum,
             Box::new(crate::node::cumsum::CumSumProcessor),
         );
