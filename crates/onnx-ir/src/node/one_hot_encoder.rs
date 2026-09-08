@@ -61,9 +61,11 @@ impl NodeProcessor for OneHotEncoderProcessor {
     fn infer_types(
         &self,
         node: &mut RawNode,
-        _opset: usize,
+        opset: usize,
         _output_preferences: &OutputPreferences,
     ) -> Result<(), ProcessError> {
+        let config = self.extract_config(node, opset)?;
+
         // Output Y is always tensor(float) with rank = input_rank + 1.
         // The extra dimension is the number of categories.
         let (input_rank, num_categories) = match &node.inputs[0].ty {
@@ -78,8 +80,8 @@ impl NodeProcessor for OneHotEncoderProcessor {
                     }
                 }
 
-                // Determine number of categories from attributes
-                let num_cats = self.get_num_categories(node)?;
+                // Determine number of categories from validated config.
+                let num_cats = self.get_num_categories(&config);
 
                 (t.rank, num_cats)
             }
@@ -160,6 +162,20 @@ impl NodeProcessor for OneHotEncoderProcessor {
             }
         }
 
+        match (&cats_int64s, &cats_strings) {
+            (Some(_), Some(_)) => {
+                return Err(ProcessError::Custom(
+                    "OneHotEncoder: exactly one of cats_int64s or cats_strings must be provided (got both)".to_string(),
+                ));
+            }
+            (None, None) => {
+                return Err(ProcessError::MissingAttribute(
+                    "cats_int64s or cats_strings".to_string(),
+                ));
+            }
+            _ => {}
+        }
+
         Ok(OneHotEncoderConfig::new(cats_int64s, cats_strings, zeros))
     }
 
@@ -175,27 +191,16 @@ impl NodeProcessor for OneHotEncoderProcessor {
 }
 
 impl OneHotEncoderProcessor {
-    /// Get the number of categories from attributes
-    fn get_num_categories(&self, node: &RawNode) -> Result<usize, ProcessError> {
-        for (key, value) in node.attrs.iter() {
-            match key.as_str() {
-                "cats_int64s" => {
-                    if let AttributeValue::Int64s(ints) = value {
-                        return Ok(ints.len());
-                    }
-                }
-                "cats_strings" => {
-                    if let AttributeValue::Strings(strings) = value {
-                        return Ok(strings.len());
-                    }
-                }
-                _ => {}
-            }
+    /// Get the number of categories from validated config.
+    fn get_num_categories(&self, config: &OneHotEncoderConfig) -> usize {
+        if let Some(ints) = &config.cats_int64s {
+            ints.len()
+        } else if let Some(strings) = &config.cats_strings {
+            strings.len()
+        } else {
+            // extract_config enforces that exactly one category list is present.
+            unreachable!("OneHotEncoder config must contain exactly one category list")
         }
-
-        Err(ProcessError::MissingAttribute(
-            "cats_int64s or cats_strings".to_string(),
-        ))
     }
 }
 
@@ -260,7 +265,7 @@ mod tests {
     }
 
     #[test]
-    fn test_extract_config_reads_all_supported_attributes() {
+    fn test_extract_config_rejects_both_category_attributes() {
         let node = make_node_builder(DType::I64, 1, Some(vec![4]))
             .attr_ints("cats_int64s", vec![0, 1, 2])
             .attr_strings("cats_strings", vec!["a".to_string(), "b".to_string()])
@@ -268,13 +273,23 @@ mod tests {
             .build();
 
         let processor = OneHotEncoderProcessor;
+        let err = processor.extract_config(&node, 1).unwrap_err();
+
+        assert!(matches!(err, ProcessError::Custom(_)));
+    }
+
+    #[test]
+    fn test_extract_config_reads_single_category_attribute() {
+        let node = make_node_builder(DType::I64, 1, Some(vec![4]))
+            .attr_ints("cats_int64s", vec![0, 1, 2])
+            .attr_int("zeros", 0)
+            .build();
+
+        let processor = OneHotEncoderProcessor;
         let config = processor.extract_config(&node, 1).unwrap();
 
         assert_eq!(config.cats_int64s, Some(vec![0, 1, 2]));
-        assert_eq!(
-            config.cats_strings,
-            Some(vec!["a".to_string(), "b".to_string()])
-        );
+        assert!(config.cats_strings.is_none());
         assert_eq!(config.zeros, Some(0));
     }
 

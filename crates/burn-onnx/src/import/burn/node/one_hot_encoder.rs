@@ -1,27 +1,36 @@
 use super::prelude::*;
 
-/// Get categories as f32 values.
-/// Prefer cats_int64s; fall back to cats_strings parsed as numbers.
-fn cats_f32(config: &onnx_ir::one_hot_encoder::OneHotEncoderConfig) -> Vec<f32> {
+enum Categories {
+    Int64(Vec<i64>),
+    Float64(Vec<f64>),
+}
+
+/// Get categories while preserving identity.
+///
+/// - `cats_int64s` stay as i64 so large integer identities are not collapsed.
+/// - `cats_strings` are parsed as f64 for numeric comparisons.
+fn categories(config: &onnx_ir::one_hot_encoder::OneHotEncoderConfig) -> Categories {
     if let Some(cats) = &config.cats_int64s {
-        cats.iter().map(|&c| c as f32).collect()
+        Categories::Int64(cats.clone())
     } else if let Some(strings) = &config.cats_strings {
-        strings
-            .iter()
-            .map(|s| {
-                s.parse::<f64>().unwrap_or_else(|_| {
-                    log::error!(
-                        "OneHotEncoder: cannot parse cats_strings value '{}' as a number. \
-                         String categories without numeric representation are not supported in Burn codegen.",
-                        s
-                    );
-                    0.0
-                }) as f32
-            })
-            .collect()
+        Categories::Float64(
+            strings
+                .iter()
+                .map(|s| {
+                    s.parse::<f64>().unwrap_or_else(|_| {
+                        log::error!(
+                            "OneHotEncoder: cannot parse cats_strings value '{}' as a number. \
+                             String categories without numeric representation are not supported in Burn codegen.",
+                            s
+                        );
+                        0.0
+                    })
+                })
+                .collect(),
+        )
     } else {
         log::error!("OneHotEncoder: neither cats_int64s nor cats_strings provided");
-        vec![]
+        Categories::Int64(vec![])
     }
 }
 
@@ -38,19 +47,31 @@ impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
         // Store the category lookup table once at construction time instead of
         // rebuilding it on every forward() call — category lists can be large
         // (thousands of entries), and forward() may be called per-inference.
-        let cats = cats_f32(&self.config);
+        let cats = categories(&self.config);
         let name = Ident::new(&self.name, Span::call_site());
 
-        Some(Field::new(
-            &self.name,
-            quote! { Tensor<1> },
-            quote! {
-                let #name: Tensor<1> = Tensor::<1>::from_data(
-                    [#(#cats),*],
-                    (device, burn::tensor::DType::F32),
-                );
-            },
-        ))
+        match cats {
+            Categories::Int64(cats) => Some(Field::new(
+                &self.name,
+                quote! { Tensor<1, Int> },
+                quote! {
+                    let #name: Tensor<1, Int> = Tensor::<1, Int>::from_data(
+                        [#(#cats),*],
+                        (device, burn::tensor::DType::I64),
+                    );
+                },
+            )),
+            Categories::Float64(cats) => Some(Field::new(
+                &self.name,
+                quote! { Tensor<1> },
+                quote! {
+                    let #name: Tensor<1> = Tensor::<1>::from_data(
+                        [#(#cats),*],
+                        (device, burn::tensor::DType::F64),
+                    );
+                },
+            )),
+        }
     }
 
     fn forward(&self, scope: &mut ScopeAtPosition<'_>) -> TokenStream {
@@ -63,15 +84,11 @@ impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
             ArgType::Tensor(tensor_type) => {
                 let input_rank = tensor_type.rank;
 
-                // Cast input to F32 (all inputs get cast to int for lookup, but we compare as F32)
-                let input_expr = match tensor_type.dtype {
-                    DType::F32 => quote! { #input.clone() },
-                    DType::F64 => quote! { #input.cast(burn::tensor::DType::F32) },
-                    _ => quote! { #input.float().cast(burn::tensor::DType::F32) },
+                let cats = categories(&self.config);
+                let num_categories = match &cats {
+                    Categories::Int64(cats) => cats.len(),
+                    Categories::Float64(cats) => cats.len(),
                 };
-
-                // Mirrors the derivation in field() exactly.
-                let num_categories = cats_f32(&self.config).len();
 
                 // Build reshape dims for the category tensor to broadcast:
                 // input shape: [d0, d1, ..., d_{r-1}]
@@ -84,18 +101,60 @@ impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
                 // category tensor with shape [1,...,1,num_cats], broadcast-compare via
                 // equal, then float-cast. This is efficient and uses native tensor ops.
 
-                quote! {
-                    {
-                        let x = #input_expr;
-                        // Unsqueeze input: [d0,...,d_{r-1}] -> [d0,...,d_{r-1}, 1]
-                        let x_unsqueezed = x.unsqueeze_dim(#input_rank);
-                        // Reshape the precomputed category tensor: [num_categories] -> [1,...,1, num_categories]
-                        let cats = self.#field_name.clone().reshape([#(#ones,)* #num_categories]);
-                        // Broadcast compare: [d0,...,d_{r-1}, 1] == [1,...,1, num_cats]
-                        // -> [d0,...,d_{r-1}, num_cats] (bool)
-                        // Convert bool to float
-                        x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
-                    }
+                match (tensor_type.dtype, cats) {
+                    // Preserve integer identity for integer input and integer categories.
+                    (DType::I32 | DType::I64, Categories::Int64(_)) => quote! {
+                        {
+                            let x = #input.cast(burn::tensor::DType::I64);
+                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
+                            let cats = self.#field_name.clone().reshape([#(#ones,)* #num_categories]);
+                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
+                        }
+                    },
+                    // For float inputs or float categories, compare as F64 and cast only the result.
+                    (DType::F64, Categories::Int64(_)) => quote! {
+                        {
+                            let x = #input.clone();
+                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
+                            let cats = self.#field_name
+                                .clone()
+                                .cast(burn::tensor::DType::F64)
+                                .reshape([#(#ones,)* #num_categories]);
+                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
+                        }
+                    },
+                    (DType::F32, Categories::Int64(_)) => quote! {
+                        {
+                            let x = #input.cast(burn::tensor::DType::F64);
+                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
+                            let cats = self.#field_name
+                                .clone()
+                                .cast(burn::tensor::DType::F64)
+                                .reshape([#(#ones,)* #num_categories]);
+                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
+                        }
+                    },
+                    (DType::I32 | DType::I64, Categories::Float64(_))
+                    | (DType::F32 | DType::F64, Categories::Float64(_)) => quote! {
+                        {
+                            let x = #input.float().cast(burn::tensor::DType::F64);
+                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
+                            let cats = self.#field_name.clone().reshape([#(#ones,)* #num_categories]);
+                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
+                        }
+                    },
+                    // Should never happen for current OneHotEncoder type constraints.
+                    _ => quote! {
+                        {
+                            let x = #input.float().cast(burn::tensor::DType::F64);
+                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
+                            let cats = self.#field_name
+                                .clone()
+                                .cast(burn::tensor::DType::F64)
+                                .reshape([#(#ones,)* #num_categories]);
+                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
+                        }
+                    },
                 }
             }
             ty => {
@@ -136,9 +195,13 @@ mod tests {
         assert_snapshot!(code, @"
         pub fn forward(&self, input: Tensor<1>) -> Tensor<2> {
             let output = {
-                let x = input.clone();
+                let x = input.cast(burn::tensor::DType::F64);
                 let x_unsqueezed = x.unsqueeze_dim(1usize);
-                let cats = self.ohe1.clone().reshape([1usize, 4usize]);
+                let cats = self
+                    .ohe1
+                    .clone()
+                    .cast(burn::tensor::DType::F64)
+                    .reshape([1usize, 4usize]);
                 x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
             };
             output
@@ -162,9 +225,13 @@ mod tests {
         assert_snapshot!(code, @"
         pub fn forward(&self, input: Tensor<2>) -> Tensor<3> {
             let output = {
-                let x = input.clone();
+                let x = input.cast(burn::tensor::DType::F64);
                 let x_unsqueezed = x.unsqueeze_dim(2usize);
-                let cats = self.ohe2.clone().reshape([1usize, 1usize, 3usize]);
+                let cats = self
+                    .ohe2
+                    .clone()
+                    .cast(burn::tensor::DType::F64)
+                    .reshape([1usize, 1usize, 3usize]);
                 x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
             };
             output
@@ -188,7 +255,7 @@ mod tests {
         assert_snapshot!(code, @"
         pub fn forward(&self, input: Tensor<1, Int>) -> Tensor<2> {
             let output = {
-                let x = input.float().cast(burn::tensor::DType::F32);
+                let x = input.cast(burn::tensor::DType::I64);
                 let x_unsqueezed = x.unsqueeze_dim(1usize);
                 let cats = self.ohe3.clone().reshape([1usize, 5usize]);
                 x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
@@ -219,7 +286,7 @@ mod tests {
         assert_snapshot!(code, @"
         pub fn forward(&self, input: Tensor<1>) -> Tensor<2> {
             let output = {
-                let x = input.clone();
+                let x = input.float().cast(burn::tensor::DType::F64);
                 let x_unsqueezed = x.unsqueeze_dim(1usize);
                 let cats = self.ohe4.clone().reshape([1usize, 3usize]);
                 x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
@@ -243,9 +310,10 @@ mod tests {
         let node = OneHotEncoderNode::new("ohe1".to_string(), vec![input], vec![output], config);
         let code = codegen_field_init(&node);
         assert_snapshot!(code, @"
-        let ohe1: Tensor<1> = Tensor::<
+        let ohe1: Tensor<1, Int> = Tensor::<
             1,
-        >::from_data([0f32, 1f32, 2f32, 3f32], (device, burn::tensor::DType::F32));
+            Int,
+        >::from_data([0i64, 1i64, 2i64, 3i64], (device, burn::tensor::DType::I64));
         ");
     }
 }
