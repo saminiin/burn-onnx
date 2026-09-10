@@ -224,14 +224,13 @@ impl OneHotEncoderProcessor {
 
     /// Get the number of categories from validated config.
     fn get_num_categories(&self, config: &OneHotEncoderConfig) -> usize {
-        if let Some(ints) = &config.cats_int64s {
-            ints.len()
-        } else if let Some(strings) = &config.cats_strings {
-            strings.len()
-        } else {
-            // extract_config enforces that exactly one category list is present.
-            unreachable!("OneHotEncoder config must contain exactly one category list")
-        }
+        // validate_config rejects cats_strings and requires a non-empty cats_int64s,
+        // so this is the only category list that can reach codegen.
+        config
+            .cats_int64s
+            .as_ref()
+            .expect("OneHotEncoder config must contain cats_int64s")
+            .len()
     }
 }
 

@@ -422,6 +422,8 @@ fn add_all_inputs(model_gen: &mut ModelGen) {
         .input("tests/one_hot/one_hot_2d.onnx")
         .input("tests/one_hot_encoder/one_hot_encoder_f32.onnx")
         .input("tests/one_hot_encoder/one_hot_encoder_f64.onnx")
+        .input("tests/one_hot_encoder/one_hot_encoder_i64.onnx")
+        .input("tests/one_hot_encoder/one_hot_encoder_2d.onnx")
         .input("tests/or/or.onnx")
         .input("tests/or/or_scalar.onnx")
         .input("tests/or/or_broadcast.onnx")
