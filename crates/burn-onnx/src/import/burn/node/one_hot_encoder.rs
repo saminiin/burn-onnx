@@ -1,37 +1,7 @@
 use super::prelude::*;
 
-enum Categories {
-    Int64(Vec<i64>),
-    Float64(Vec<f64>),
-}
-
-/// Get categories while preserving identity.
-///
-/// - `cats_int64s` stay as i64 so large integer identities are not collapsed.
-/// - `cats_strings` are parsed as f64 for numeric comparisons.
-fn categories(config: &onnx_ir::one_hot_encoder::OneHotEncoderConfig) -> Categories {
-    if let Some(cats) = &config.cats_int64s {
-        Categories::Int64(cats.clone())
-    } else if let Some(strings) = &config.cats_strings {
-        Categories::Float64(
-            strings
-                .iter()
-                .map(|s| {
-                    s.parse::<f64>().unwrap_or_else(|_| {
-                        log::error!(
-                            "OneHotEncoder: cannot parse cats_strings value '{}' as a number. \
-                             String categories without numeric representation are not supported in Burn codegen.",
-                            s
-                        );
-                        0.0
-                    })
-                })
-                .collect(),
-        )
-    } else {
-        log::error!("OneHotEncoder: neither cats_int64s nor cats_strings provided");
-        Categories::Int64(vec![])
-    }
+fn int_categories(config: &onnx_ir::one_hot_encoder::OneHotEncoderConfig) -> Vec<i64> {
+    config.cats_int64s.clone().unwrap_or_default()
 }
 
 impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
@@ -47,31 +17,19 @@ impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
         // Store the category lookup table once at construction time instead of
         // rebuilding it on every forward() call — category lists can be large
         // (thousands of entries), and forward() may be called per-inference.
-        let cats = categories(&self.config);
+        let cats = int_categories(&self.config);
         let name = Ident::new(&self.name, Span::call_site());
 
-        match cats {
-            Categories::Int64(cats) => Some(Field::new(
-                &self.name,
-                quote! { Tensor<1, Int> },
-                quote! {
-                    let #name: Tensor<1, Int> = Tensor::<1, Int>::from_data(
-                        [#(#cats),*],
-                        (device, burn::tensor::DType::I64),
-                    );
-                },
-            )),
-            Categories::Float64(cats) => Some(Field::new(
-                &self.name,
-                quote! { Tensor<1> },
-                quote! {
-                    let #name: Tensor<1> = Tensor::<1>::from_data(
-                        [#(#cats),*],
-                        (device, burn::tensor::DType::F64),
-                    );
-                },
-            )),
-        }
+        Some(Field::new(
+            &self.name,
+            quote! { Tensor<1, Int> },
+            quote! {
+                let #name: Tensor<1, Int> = Tensor::<1, Int>::from_data(
+                    [#(#cats),*],
+                    (device, burn::tensor::DType::I64),
+                );
+            },
+        ))
     }
 
     fn forward(&self, scope: &mut ScopeAtPosition<'_>) -> TokenStream {
@@ -84,11 +42,7 @@ impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
             ArgType::Tensor(tensor_type) => {
                 let input_rank = tensor_type.rank;
 
-                let cats = categories(&self.config);
-                let num_categories = match &cats {
-                    Categories::Int64(cats) => cats.len(),
-                    Categories::Float64(cats) => cats.len(),
-                };
+                let num_categories = int_categories(&self.config).len();
 
                 // Build reshape dims for the category tensor to broadcast:
                 // input shape: [d0, d1, ..., d_{r-1}]
@@ -97,13 +51,8 @@ impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
                 // and num_categories for the last dim.
                 let ones: Vec<TokenStream> = (0..input_rank).map(|_| quote! { 1usize }).collect();
 
-                // Strategy: unsqueeze input to add a trailing dim, reshape the stored
-                // category tensor with shape [1,...,1,num_cats], broadcast-compare via
-                // equal, then float-cast. This is efficient and uses native tensor ops.
-
-                match (tensor_type.dtype, cats) {
-                    // Preserve integer identity for integer input and integer categories.
-                    (DType::I32 | DType::I64, Categories::Int64(_)) => quote! {
+                match tensor_type.dtype {
+                    DType::I32 | DType::I64 => quote! {
                         {
                             let x = #input.cast(burn::tensor::DType::I64);
                             let x_unsqueezed = x.unsqueeze_dim(#input_rank);
@@ -111,50 +60,22 @@ impl NodeCodegen for onnx_ir::one_hot_encoder::OneHotEncoderNode {
                             x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
                         }
                     },
-                    // For float inputs or float categories, compare as F64 and cast only the result.
-                    (DType::F64, Categories::Int64(_)) => quote! {
-                        {
-                            let x = #input.clone();
-                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
-                            let cats = self.#field_name
-                                .clone()
-                                .cast(burn::tensor::DType::F64)
-                                .reshape([#(#ones,)* #num_categories]);
-                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
-                        }
-                    },
-                    (DType::F32, Categories::Int64(_)) => quote! {
+                    DType::F32 | DType::F64 => quote! {
                         {
                             let x = #input.cast(burn::tensor::DType::F64);
                             let x_unsqueezed = x.unsqueeze_dim(#input_rank);
                             let cats = self.#field_name
                                 .clone()
+                                .float()
                                 .cast(burn::tensor::DType::F64)
                                 .reshape([#(#ones,)* #num_categories]);
                             x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
                         }
                     },
-                    (DType::I32 | DType::I64, Categories::Float64(_))
-                    | (DType::F32 | DType::F64, Categories::Float64(_)) => quote! {
-                        {
-                            let x = #input.float().cast(burn::tensor::DType::F64);
-                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
-                            let cats = self.#field_name.clone().reshape([#(#ones,)* #num_categories]);
-                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
-                        }
-                    },
-                    // Should never happen for current OneHotEncoder type constraints.
-                    _ => quote! {
-                        {
-                            let x = #input.float().cast(burn::tensor::DType::F64);
-                            let x_unsqueezed = x.unsqueeze_dim(#input_rank);
-                            let cats = self.#field_name
-                                .clone()
-                                .cast(burn::tensor::DType::F64)
-                                .reshape([#(#ones,)* #num_categories]);
-                            x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
-                        }
-                    },
+                    _ => unreachable!(
+                        "OneHotEncoder input dtype is validated in onnx-ir; got {:?}",
+                        tensor_type.dtype
+                    ),
                 }
             }
             ty => {
@@ -200,6 +121,7 @@ mod tests {
                 let cats = self
                     .ohe1
                     .clone()
+                    .float()
                     .cast(burn::tensor::DType::F64)
                     .reshape([1usize, 4usize]);
                 x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
@@ -230,6 +152,7 @@ mod tests {
                 let cats = self
                     .ohe2
                     .clone()
+                    .float()
                     .cast(burn::tensor::DType::F64)
                     .reshape([1usize, 1usize, 3usize]);
                 x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
@@ -266,16 +189,11 @@ mod tests {
     }
 
     #[test]
-    fn test_onehotencoder_cats_strings() {
-        // cats_strings with numeric string values should work
-        let config = OneHotEncoderConfig::new(
-            None,
-            Some(vec!["0".to_string(), "1".to_string(), "2".to_string()]),
-            Some(1),
-        );
+    fn test_onehotencoder_f64_input() {
+        let config = OneHotEncoderConfig::new(Some(vec![0, 1, 2]), None, Some(1));
         let input = onnx_ir::ir::Argument::new(
             "input",
-            ArgType::Tensor(TensorType::new(DType::F32, 1, None)),
+            ArgType::Tensor(TensorType::new(DType::F64, 1, None)),
         );
         let output = onnx_ir::ir::Argument::new(
             "output",
@@ -286,9 +204,14 @@ mod tests {
         assert_snapshot!(code, @"
         pub fn forward(&self, input: Tensor<1>) -> Tensor<2> {
             let output = {
-                let x = input.float().cast(burn::tensor::DType::F64);
+                let x = input.cast(burn::tensor::DType::F64);
                 let x_unsqueezed = x.unsqueeze_dim(1usize);
-                let cats = self.ohe4.clone().reshape([1usize, 3usize]);
+                let cats = self
+                    .ohe4
+                    .clone()
+                    .float()
+                    .cast(burn::tensor::DType::F64)
+                    .reshape([1usize, 3usize]);
                 x_unsqueezed.equal(cats).float().cast(burn::tensor::DType::F32)
             };
             output

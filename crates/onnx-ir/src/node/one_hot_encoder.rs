@@ -162,25 +162,16 @@ impl NodeProcessor for OneHotEncoderProcessor {
             }
         }
 
-        match (&cats_int64s, &cats_strings) {
-            (Some(_), Some(_)) => {
-                return Err(ProcessError::Custom(
-                    "OneHotEncoder: exactly one of cats_int64s or cats_strings must be provided (got both)".to_string(),
-                ));
-            }
-            (None, None) => {
-                return Err(ProcessError::MissingAttribute(
-                    "cats_int64s or cats_strings".to_string(),
-                ));
-            }
-            _ => {}
-        }
+        let config = OneHotEncoderConfig::new(cats_int64s, cats_strings, zeros);
+        self.validate_config(&config)?;
 
-        Ok(OneHotEncoderConfig::new(cats_int64s, cats_strings, zeros))
+        Ok(config)
     }
 
     fn build_node(&self, builder: RawNode, opset: usize) -> Node {
-        let config = self.extract_config(&builder, opset).unwrap();
+        let config = self
+            .extract_config(&builder, opset)
+            .expect("OneHotEncoder config extraction must succeed after validation");
         Node::OneHotEncoder(OneHotEncoderNode::new(
             builder.name,
             builder.inputs,
@@ -191,6 +182,46 @@ impl NodeProcessor for OneHotEncoderProcessor {
 }
 
 impl OneHotEncoderProcessor {
+    fn validate_config(&self, config: &OneHotEncoderConfig) -> Result<(), ProcessError> {
+        let has_ints = config.cats_int64s.is_some();
+        let has_strings = config.cats_strings.is_some();
+
+        if has_ints == has_strings {
+            return Err(ProcessError::InvalidAttribute {
+                name: "cats_int64s/cats_strings".to_string(),
+                reason: "exactly one of cats_int64s or cats_strings must be provided".to_string(),
+            });
+        }
+
+        if has_strings {
+            return Err(ProcessError::Custom(
+                "OneHotEncoder with cats_strings is not supported in burn-onnx; \
+                 only numeric categories (cats_int64s) are supported"
+                    .to_string(),
+            ));
+        }
+
+        if let Some(ints) = &config.cats_int64s
+            && ints.is_empty()
+        {
+            return Err(ProcessError::InvalidAttribute {
+                name: "cats_int64s".to_string(),
+                reason: "must not be empty".to_string(),
+            });
+        }
+
+        let zeros = config.zeros.unwrap_or(1);
+        if zeros != 1 {
+            return Err(ProcessError::Custom(
+                "OneHotEncoder zeros=0 is not supported in burn-onnx because unknown \
+                 categories must raise at runtime"
+                    .to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     /// Get the number of categories from validated config.
     fn get_num_categories(&self, config: &OneHotEncoderConfig) -> usize {
         if let Some(ints) = &config.cats_int64s {
@@ -269,20 +300,24 @@ mod tests {
         let node = make_node_builder(DType::I64, 1, Some(vec![4]))
             .attr_ints("cats_int64s", vec![0, 1, 2])
             .attr_strings("cats_strings", vec!["a".to_string(), "b".to_string()])
-            .attr_int("zeros", 0)
+            .attr_int("zeros", 1)
             .build();
 
         let processor = OneHotEncoderProcessor;
         let err = processor.extract_config(&node, 1).unwrap_err();
 
-        assert!(matches!(err, ProcessError::Custom(_)));
+        assert!(matches!(err, ProcessError::InvalidAttribute { .. }));
+        assert!(
+            err.to_string()
+                .contains("exactly one of cats_int64s or cats_strings")
+        );
     }
 
     #[test]
     fn test_extract_config_reads_single_category_attribute() {
         let node = make_node_builder(DType::I64, 1, Some(vec![4]))
             .attr_ints("cats_int64s", vec![0, 1, 2])
-            .attr_int("zeros", 0)
+            .attr_int("zeros", 1)
             .build();
 
         let processor = OneHotEncoderProcessor;
@@ -290,7 +325,48 @@ mod tests {
 
         assert_eq!(config.cats_int64s, Some(vec![0, 1, 2]));
         assert!(config.cats_strings.is_none());
-        assert_eq!(config.zeros, Some(0));
+        assert_eq!(config.zeros, Some(1));
+    }
+
+    #[test]
+    fn test_extract_config_rejects_zeros_zero() {
+        let node = make_node_builder(DType::I64, 1, Some(vec![4]))
+            .attr_ints("cats_int64s", vec![0, 1, 2])
+            .attr_int("zeros", 0)
+            .build();
+
+        let processor = OneHotEncoderProcessor;
+        let err = processor.extract_config(&node, 1).unwrap_err();
+
+        assert!(matches!(err, ProcessError::Custom(_)));
+        assert!(err.to_string().contains("zeros=0 is not supported"));
+    }
+
+    #[test]
+    fn test_extract_config_rejects_empty_cats_int64s() {
+        let node = make_node_builder(DType::I64, 1, Some(vec![4]))
+            .attr_ints("cats_int64s", vec![])
+            .build();
+
+        let processor = OneHotEncoderProcessor;
+        let err = processor.extract_config(&node, 1).unwrap_err();
+
+        assert!(matches!(err, ProcessError::InvalidAttribute { .. }));
+        assert!(err.to_string().contains("cats_int64s"));
+        assert!(err.to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_extract_config_rejects_cats_strings() {
+        let node = make_node_builder(DType::F32, 1, Some(vec![2]))
+            .attr_strings("cats_strings", vec!["a".to_string(), "b".to_string()])
+            .build();
+
+        let processor = OneHotEncoderProcessor;
+        let err = processor.extract_config(&node, 1).unwrap_err();
+
+        assert!(matches!(err, ProcessError::Custom(_)));
+        assert!(err.to_string().contains("cats_strings is not supported"));
     }
 
     #[test]
@@ -354,6 +430,10 @@ mod tests {
         let prefs = OutputPreferences::new();
         let err = processor.infer_types(&mut node, 1, &prefs).unwrap_err();
 
-        assert!(matches!(err, ProcessError::MissingAttribute(_)));
+        assert!(matches!(err, ProcessError::InvalidAttribute { .. }));
+        assert!(
+            err.to_string()
+                .contains("exactly one of cats_int64s or cats_strings")
+        );
     }
 }
